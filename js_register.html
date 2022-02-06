@@ -1,0 +1,139 @@
+<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js" integrity="sha384-IQsoLXl5PILFhosVNubq5LC7Qb9DXgDA9i+tQ8Zj3iwWAwPtgFTxbJ8NT4GN1R8p" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.min.js" integrity="sha384-cVKIPhGWiC2Al4u+LWgxfKTRIcfu0JTxR+EQDz/bgldoEyl4H0zUF0QKbrJ0EcQF" crossorigin="anonymous"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+<script>
+  $(document).ready(function() {
+    $('.alert').hide();
+
+    initializeForm();
+    
+    // [追加]ボタンが押された際にTableにデータを追加していく
+    $('#addBtn').on('click', function() {
+      // JQueryで取得したObject(wrapされている)はreportValidityメソッドをサポートしていない為、素で取得する。
+      if(!document.querySelector('#onerecord').reportValidity()) {
+        return false;
+      }
+      
+      let row = [];
+      $('.inputs').each(function(i, elem) {
+        row.push(elem.value);
+      });
+      let record = $.map(row, function(value) {
+        return $('<td>', {text: value});
+      })
+      // #tbodyに追加したtrに対して、更にrecord, btnを追加する
+      $('<tr>').appendTo('#tbody').append(record)
+        .append('<td><button class="btn btn-danger rmRow" type="button">除外</button></td>');
+      
+      // 追加が完了したらフォーカスを次の入力用に移動する
+      $('#inputType').focus();
+    });
+
+    // Table内の[削除]ボタンが押された際にその行のデータを消す
+    $('#tbody').on('click', '.rmRow', function() {
+      let row = $(this).closest("tr").remove();
+      $(row).remove();
+    });
+
+    // [登録]ボタンが押された際にspreadsheetに一括書き込みを行う
+    $('#registerBtn').on('click', function() {
+      // 重複押下防止の為、一度ボタンを非活性化
+      $('#registerBtn').prop('disabled', true);
+      // Tableにデータが追加されていないときは登録しない
+      if (isTableEmpty()) {
+        echoError('Required at least a data for one table row!');
+        $('#registerBtn').prop('disabled', false);
+        return;
+      }
+      let tableData = [];
+      let current = new Date().toLocaleString('ja-JP');
+      $("#tbody tr").each(function(iTr, vTr){
+        tableData[iTr] = [];
+        $(this).children('td').each(function(iTd, vTd){
+            tableData[iTr][iTd] = $(this).text();
+        });
+        tableData[iTr].pop();
+        tableData[iTr].push(current);
+      });
+      registerData(tableData);
+      $('#registerBtn').prop('disabled', false);
+    });
+  });
+
+  function initializeForm() {
+    let dateObject = new Date();
+    // 〆月の選択肢を作成して、現在月をDefaultで表示する
+    let monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
+          selectMonth = $('#inputMonth');
+    let thisMonth = dateObject.getMonth() + 1;
+    createOptions(monthNames, selectMonth, `${thisMonth}月`);
+
+    // 項目の選択肢を作成する
+    let types = ['食費', '外食費', '生活雑貨', '水光熱費', '車関連', '薬', '子供関連', '服', 'その他'],
+          selectType = $('#inputType');
+    createOptions(types, selectType, '食費');
+
+    // TableのHeaderを作成する
+    const header = ['項目', '金額', '店名', '〆月', '支払った人', '備考', '除去?'];
+    let ths = $.map(header, function(value) {
+      return $('<th>', {scope: 'col', text: value});
+    })
+    $('#thead tr').append(ths);
+
+    // 何年向けのスプレッドシートを指定するのか、選択肢を作成
+    let thisYear = dateObject.getFullYear();
+    let years = Array.from(Array(5), (_, i) => thisYear - 2 + i);
+    let selectYear = $('#yearOfSheet');
+    createOptions(years, selectYear, thisYear);
+    
+    // 一番最初にフォーカス
+    $('#inputType').focus();
+  }
+
+  function createOptions(list, selectElem, tobeSelected) {
+    let opts = $.map(list, function(value) {
+      let isSelected = (value === tobeSelected);
+      return $('<option>', {
+        value: value, text: value, selected: isSelected
+      });
+    });
+    selectElem.append(opts);
+  }
+
+  function execBatchInsert(tableData) {
+    const yearOfSheet = $('#yearOfSheet').val();
+    return new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler((result) => resolve(result))
+        .withFailureHandler((error) => reject(error))
+        .batchInsert(tableData, yearOfSheet);
+    });
+  }
+
+  async function registerData(tableData) {
+    try {
+      const result = await execBatchInsert(tableData);
+      echoInfo('Successfully registered!');
+      init();
+    } catch(e) {
+      echoError(`Failed to register data... ${e}`);
+    }
+  }
+
+  function isTableEmpty() {
+    let rowNum = $('#tbody').children().length;
+    return (rowNum == 0 ? true : false);
+  }
+
+  function echoInfo(msg) {
+    $('#success-msg').html(msg).fadeIn('slow').delay(2000).fadeOut("slow");
+  }
+
+  function echoError(msg) {
+    $('#err-msg').html(msg).fadeIn('slow').delay(4000).fadeOut('slow');
+  }
+
+  function init() {
+    $('#tbody tr').remove();
+  }
+</script>
